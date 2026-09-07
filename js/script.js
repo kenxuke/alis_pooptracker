@@ -1,4 +1,4 @@
-
+// State variables
 let currentDate = new Date();
 let logs = JSON.parse(localStorage.getItem('poop_logs') || '{}');
 let chartInstance = null;
@@ -9,11 +9,14 @@ const calendarDaysContainer = document.getElementById('calendar-days');
 const prevBtn = document.getElementById('prev-month');
 const nextBtn = document.getElementById('next-month');
 
-// Sidebar
+// Sidebar Elements
 const sidebar = document.getElementById('analytics-sidebar');
 const sidebarOverlay = document.getElementById('sidebar-overlay');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
 const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+const deleteAllBtn = document.getElementById('delete-all-btn');
+
+const MAX_DAILY_POOPS = 5;
 
 function getFormattedDateStr(year, month, day) {
   const m = String(month + 1).padStart(2, '0');
@@ -21,20 +24,47 @@ function getFormattedDateStr(year, month, day) {
   return `${year}-${m}-${d}`;
 }
 
-function toggleLog(dateStr) {
-  if (logs[dateStr]) {
+function getLocalDateStr(dateObj) {
+  const year = dateObj.getFullYear();
+  const month = dateObj.getMonth();
+  const day = dateObj.getDate();
+  return getFormattedDateStr(year, month, day);
+}
+
+function handleDateTap(dateStr) {
+  const currentCount = logs[dateStr] || 0;
+  
+  if (currentCount >= MAX_DAILY_POOPS) {
     delete logs[dateStr];
   } else {
-    logs[dateStr] = true;
+    logs[dateStr] = currentCount + 1;
   }
+  
   localStorage.setItem('poop_logs', JSON.stringify(logs));
   renderCalendar();
   updateAnalytics();
 }
 
+function handleDateReset(dateStr) {
+  if (logs[dateStr]) {
+    delete logs[dateStr];
+    localStorage.setItem('poop_logs', JSON.stringify(logs));
+    
+    if (navigator.vibrate) {
+      navigator.vibrate(50);
+    }
+
+    renderCalendar();
+    updateAnalytics();
+  }
+}
+
 function renderCalendar() {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+
+  // Get current date string for today matching
+  const todayStr = getLocalDateStr(new Date());
 
   monthYearLabel.textContent = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(currentDate);
 
@@ -52,39 +82,99 @@ function renderCalendar() {
 
   for (let day = 1; day <= totalDays; day++) {
     const dateStr = getFormattedDateStr(year, month, day);
+    const count = logs[dateStr] || 0;
     const dayCell = document.createElement('div');
     dayCell.className = 'day-cell';
 
-    if (logs[dateStr]) {
+    // Highlight current day green
+    if (dateStr === todayStr) {
+      dayCell.classList.add('today');
+    }
+
+    if (count > 0) {
       dayCell.classList.add('has-poop');
+    }
+
+    let indicatorHtml = '';
+    if (count === 1) {
+      indicatorHtml = `<div class="poop-wrapper"><span class="poop-icon">💩</span></div>`;
+    } else if (count > 1) {
+      indicatorHtml = `
+        <div class="poop-wrapper">
+          <span class="poop-icon">💩</span>
+          <span class="count-badge">x${count}</span>
+        </div>`;
     }
 
     dayCell.innerHTML = `
       <span class="day-number">${day}</span>
-      ${logs[dateStr] ? '<span class="poop-icon">💩</span>' : ''}
+      ${indicatorHtml}
     `;
 
-    dayCell.addEventListener('click', () => toggleLog(dateStr));
+    // Long press logic
+    let pressTimer = null;
+    let isLongPress = false;
+
+    const startPress = () => {
+      isLongPress = false;
+      pressTimer = setTimeout(() => {
+        isLongPress = true;
+        handleDateReset(dateStr);
+      }, 500);
+    };
+
+    const cancelPress = () => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    };
+
+    dayCell.addEventListener('touchstart', startPress, { passive: true });
+    dayCell.addEventListener('touchend', (e) => {
+      cancelPress();
+      if (isLongPress) {
+        e.preventDefault();
+      }
+    });
+    dayCell.addEventListener('touchmove', cancelPress, { passive: true });
+
+    dayCell.addEventListener('mousedown', startPress);
+    dayCell.addEventListener('mouseup', cancelPress);
+    dayCell.addEventListener('mouseleave', cancelPress);
+
+    dayCell.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      handleDateReset(dateStr);
+    });
+
+    dayCell.addEventListener('click', () => {
+      if (!isLongPress) {
+        handleDateTap(dateStr);
+      }
+    });
+
     calendarDaysContainer.appendChild(dayCell);
   }
 }
 
 function calculateStreak() {
   let streak = 0;
-  let today = new Date();
+  let now = new Date();
   
-  let checkDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  let dateStr = getFormattedDateStr(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate());
+  let today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let checkTime = today.getTime();
+  let checkStr = getLocalDateStr(new Date(checkTime));
 
-  if (!logs[dateStr]) {
-    checkDate.setDate(checkDate.getDate() - 1);
-    dateStr = getFormattedDateStr(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate());
+  if (!logs[checkStr] || logs[checkStr] <= 0) {
+    checkTime -= 86400000;
+    checkStr = getLocalDateStr(new Date(checkTime));
   }
 
-  while (logs[dateStr]) {
+  while (logs[checkStr] && logs[checkStr] > 0) {
     streak++;
-    checkDate.setDate(checkDate.getDate() - 1);
-    dateStr = getFormattedDateStr(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate());
+    checkTime -= 86400000;
+    checkStr = getLocalDateStr(new Date(checkTime));
   }
 
   return streak;
@@ -100,10 +190,11 @@ function updateAnalytics() {
 
   for (let day = 1; day <= totalDaysInMonth; day++) {
     const dateStr = getFormattedDateStr(year, month, day);
-    if (logs[dateStr]) {
-      monthTotal++;
+    const count = logs[dateStr] || 0;
+    if (count > 0) {
+      monthTotal += count;
       const weekIndex = Math.floor((day - 1) / 7);
-      if (weekIndex < 5) weeklyCounts[weekIndex]++;
+      if (weekIndex < 5) weeklyCounts[weekIndex] += count;
     }
   }
 
@@ -113,7 +204,6 @@ function updateAnalytics() {
   const ctx = document.getElementById('monthlyChart').getContext('2d');
   if (chartInstance) chartInstance.destroy();
 
-  // Create smooth gradient for chart bars
   const gradient = ctx.createLinearGradient(0, 0, 0, 200);
   gradient.addColorStop(0, '#96613D');
   gradient.addColorStop(1, '#DDB892');
@@ -158,6 +248,17 @@ function updateAnalytics() {
   });
 }
 
+function deleteAllData() {
+  const confirmed = confirm("Are you sure you want to delete all saved log entries? This action cannot be undone.");
+  if (confirmed) {
+    logs = {};
+    localStorage.removeItem('poop_logs');
+    renderCalendar();
+    updateAnalytics();
+    closeSidebar();
+  }
+}
+
 /* Sidebar Toggle Logic */
 function openSidebar() {
   sidebar.classList.add('open');
@@ -175,7 +276,9 @@ function closeSidebar() {
 toggleSidebarBtn.addEventListener('click', openSidebar);
 closeSidebarBtn.addEventListener('click', closeSidebar);
 sidebarOverlay.addEventListener('click', closeSidebar);
+deleteAllBtn.addEventListener('click', deleteAllData);
 
+// Month Navigation
 prevBtn.addEventListener('click', () => {
   currentDate.setMonth(currentDate.getMonth() - 1);
   renderCalendar();
@@ -188,5 +291,6 @@ nextBtn.addEventListener('click', () => {
   updateAnalytics();
 });
 
+// Initial Load
 renderCalendar();
 updateAnalytics();
