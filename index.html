@@ -17,8 +17,8 @@
     <div class="header-brand">
       <div class="brand-badge">💩</div>
       <div>
-        <h1>ALI's Jeb's Tracker</h1>
-        <p>Tap repeatedly to add multiple entries</p>
+        <h1>Ali's Poop Tracker</h1>
+        <p>Tap to log time • Press & hold to view times</p>
       </div>
     </div>
     <button id="toggle-sidebar-btn" class="dashboard-btn" aria-label="Open Dashboard">
@@ -51,7 +51,7 @@
   </main>
 </div>
 
-<!-- Backdrop Overlay -->
+<!-- Sidebar Overlay -->
 <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
 <!-- Slide-out Sidebar Dashboard -->
@@ -99,6 +99,22 @@
     </div>
   </div>
 </aside>
+
+<!-- Time Details Modal -->
+<div id="modal-overlay" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Logged Times</h3>
+      <button id="close-modal-btn" class="close-btn">&times;</button>
+    </div>
+    <div class="modal-body">
+      <ul id="time-list" class="time-list"></ul>
+    </div>
+    <div class="modal-footer">
+      <button id="clear-day-btn" class="delete-btn">Reset Day Logs</button>
+    </div>
+  </div>
+</div>
 
 <script src="js/script.js"></script>
 </body>
