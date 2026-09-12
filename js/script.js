@@ -8,7 +8,7 @@ for (const key in rawLogs) {
   if (Array.isArray(rawLogs[key])) {
     logs[key] = rawLogs[key];
   } else if (typeof rawLogs[key] === 'number' && rawLogs[key] > 0) {
-    // Migrate legacy numeric count into array of mock times
+    // numeric count into Array
     logs[key] = Array(rawLogs[key]).fill("Logged");
   }
 }
@@ -79,6 +79,12 @@ function openTimeModal(dateStr) {
   activeModalDateStr = dateStr;
   modalTitle.textContent = `Logged Times (${dateStr})`;
   timeList.innerHTML = '';
+/* times.forEach((time, index) => {
+  const li = document.createElement('li');
+    li.className = 'time-item';
+     li.querySelector('.delete-single-time').addEventListener('click', () => {
+      removeTimeEntry(dateStr, index);
+});*/
 
   times.forEach((time, index) => {
     const li = document.createElement('li');
@@ -108,7 +114,7 @@ function removeTimeEntry(dateStr, index) {
       delete logs[dateStr];
       closeModal();
     } else {
-      openTimeModal(dateStr); // Refresh list
+      openTimeModal(dateStr); // Refresh 
     }
     localStorage.setItem('poop_logs', JSON.stringify(logs));
     renderCalendar();
