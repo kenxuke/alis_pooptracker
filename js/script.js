@@ -1,7 +1,20 @@
 // State variables
 let currentDate = new Date();
-let logs = JSON.parse(localStorage.getItem('poop_logs') || '{}');
+let rawLogs = JSON.parse(localStorage.getItem('poop_logs') || '{}');
+
+// Data migration: ensure logs format stores arrays of time strings
+let logs = {};
+for (const key in rawLogs) {
+  if (Array.isArray(rawLogs[key])) {
+    logs[key] = rawLogs[key];
+  } else if (typeof rawLogs[key] === 'number' && rawLogs[key] > 0) {
+    // numeric count into Array
+    logs[key] = Array(rawLogs[key]).fill("Logged");
+  }
+}
+
 let chartInstance = null;
+let activeModalDateStr = null;
 
 // DOM Elements
 const monthYearLabel = document.getElementById('month-year-label');
@@ -15,6 +28,13 @@ const sidebarOverlay = document.getElementById('sidebar-overlay');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
 const closeSidebarBtn = document.getElementById('close-sidebar-btn');
 const deleteAllBtn = document.getElementById('delete-all-btn');
+
+// Modal Elements
+const modalOverlay = document.getElementById('modal-overlay');
+const modalTitle = document.getElementById('modal-title');
+const timeList = document.getElementById('time-list');
+const closeModalBtn = document.getElementById('close-modal-btn');
+const clearDayBtn = document.getElementById('clear-day-btn');
 
 const MAX_DAILY_POOPS = 5;
 
@@ -31,13 +51,20 @@ function getLocalDateStr(dateObj) {
   return getFormattedDateStr(year, month, day);
 }
 
+// Format current time into "hh:mm AM/PM"
+function getCurrentTimeString() {
+  const now = new Date();
+  return now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
 function handleDateTap(dateStr) {
-  const currentCount = logs[dateStr] || 0;
+  const times = logs[dateStr] || [];
   
-  if (currentCount >= MAX_DAILY_POOPS) {
+  if (times.length >= MAX_DAILY_POOPS) {
     delete logs[dateStr];
   } else {
-    logs[dateStr] = currentCount + 1;
+    times.push(getCurrentTimeString());
+    logs[dateStr] = times;
   }
   
   localStorage.setItem('poop_logs', JSON.stringify(logs));
@@ -45,15 +72,51 @@ function handleDateTap(dateStr) {
   updateAnalytics();
 }
 
-function handleDateReset(dateStr) {
-  if (logs[dateStr]) {
-    delete logs[dateStr];
-    localStorage.setItem('poop_logs', JSON.stringify(logs));
-    
-    if (navigator.vibrate) {
-      navigator.vibrate(50);
-    }
+function openTimeModal(dateStr) {
+  const times = logs[dateStr] || [];
+  if (times.length === 0) return;
 
+  activeModalDateStr = dateStr;
+  modalTitle.textContent = `Logged Times (${dateStr})`;
+  timeList.innerHTML = '';
+/* times.forEach((time, index) => {
+  const li = document.createElement('li');
+    li.className = 'time-item';
+     li.querySelector('.delete-single-time').addEventListener('click', () => {
+      removeTimeEntry(dateStr, index);
+});*/
+
+  times.forEach((time, index) => {
+    const li = document.createElement('li');
+    li.className = 'time-item';
+    li.innerHTML = `
+      <span>💩 Poop ${index + 1}: ${time}</span>
+      <button class="delete-single-time" aria-label="Remove entry">&times;</button>
+    `;
+    li.querySelector('.delete-single-time').addEventListener('click', () => {
+      removeTimeEntry(dateStr, index);
+    });
+    timeList.appendChild(li);
+  });
+
+  modalOverlay.classList.add('active');
+}
+
+function closeModal() {
+  modalOverlay.classList.remove('active');
+  activeModalDateStr = null;
+}
+
+function removeTimeEntry(dateStr, index) {
+  if (logs[dateStr]) {
+    logs[dateStr].splice(index, 1);
+    if (logs[dateStr].length === 0) {
+      delete logs[dateStr];
+      closeModal();
+    } else {
+      openTimeModal(dateStr); // Refresh 
+    }
+    localStorage.setItem('poop_logs', JSON.stringify(logs));
     renderCalendar();
     updateAnalytics();
   }
@@ -62,8 +125,6 @@ function handleDateReset(dateStr) {
 function renderCalendar() {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-
-  // Get current date string for today matching
   const todayStr = getLocalDateStr(new Date());
 
   monthYearLabel.textContent = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(currentDate);
@@ -82,11 +143,11 @@ function renderCalendar() {
 
   for (let day = 1; day <= totalDays; day++) {
     const dateStr = getFormattedDateStr(year, month, day);
-    const count = logs[dateStr] || 0;
+    const times = logs[dateStr] || [];
+    const count = times.length;
     const dayCell = document.createElement('div');
     dayCell.className = 'day-cell';
 
-    // Highlight current day green
     if (dateStr === todayStr) {
       dayCell.classList.add('today');
     }
@@ -111,7 +172,7 @@ function renderCalendar() {
       ${indicatorHtml}
     `;
 
-    // Long press logic
+    // Long press logic -> Open Modal with logged times
     let pressTimer = null;
     let isLongPress = false;
 
@@ -119,7 +180,10 @@ function renderCalendar() {
       isLongPress = false;
       pressTimer = setTimeout(() => {
         isLongPress = true;
-        handleDateReset(dateStr);
+        if (logs[dateStr] && logs[dateStr].length > 0) {
+          if (navigator.vibrate) navigator.vibrate(50);
+          openTimeModal(dateStr);
+        }
       }, 500);
     };
 
@@ -133,9 +197,7 @@ function renderCalendar() {
     dayCell.addEventListener('touchstart', startPress, { passive: true });
     dayCell.addEventListener('touchend', (e) => {
       cancelPress();
-      if (isLongPress) {
-        e.preventDefault();
-      }
+      if (isLongPress) e.preventDefault();
     });
     dayCell.addEventListener('touchmove', cancelPress, { passive: true });
 
@@ -145,7 +207,7 @@ function renderCalendar() {
 
     dayCell.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      handleDateReset(dateStr);
+      openTimeModal(dateStr);
     });
 
     dayCell.addEventListener('click', () => {
@@ -166,12 +228,12 @@ function calculateStreak() {
   let checkTime = today.getTime();
   let checkStr = getLocalDateStr(new Date(checkTime));
 
-  if (!logs[checkStr] || logs[checkStr] <= 0) {
+  if (!logs[checkStr] || logs[checkStr].length <= 0) {
     checkTime -= 86400000;
     checkStr = getLocalDateStr(new Date(checkTime));
   }
 
-  while (logs[checkStr] && logs[checkStr] > 0) {
+  while (logs[checkStr] && logs[checkStr].length > 0) {
     streak++;
     checkTime -= 86400000;
     checkStr = getLocalDateStr(new Date(checkTime));
@@ -190,7 +252,8 @@ function updateAnalytics() {
 
   for (let day = 1; day <= totalDaysInMonth; day++) {
     const dateStr = getFormattedDateStr(year, month, day);
-    const count = logs[dateStr] || 0;
+    const times = logs[dateStr] || [];
+    const count = times.length;
     if (count > 0) {
       monthTotal += count;
       const weekIndex = Math.floor((day - 1) / 7);
@@ -258,6 +321,21 @@ function deleteAllData() {
     closeSidebar();
   }
 }
+
+/* Modal Event Listeners */
+closeModalBtn.addEventListener('click', closeModal);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeModal();
+});
+clearDayBtn.addEventListener('click', () => {
+  if (activeModalDateStr && logs[activeModalDateStr]) {
+    delete logs[activeModalDateStr];
+    localStorage.setItem('poop_logs', JSON.stringify(logs));
+    renderCalendar();
+    updateAnalytics();
+    closeModal();
+  }
+});
 
 /* Sidebar Toggle Logic */
 function openSidebar() {
